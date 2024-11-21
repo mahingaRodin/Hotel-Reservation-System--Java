@@ -4,7 +4,7 @@ import java.util.Scanner;
 
 public class HotelReservationSystem {
 private final List<Room> rooms;
-private List<Reservation> reservations;
+private final List<Reservation> reservations;
 
     public HotelReservationSystem() {
             rooms = new ArrayList<>();
@@ -93,7 +93,7 @@ private List<Reservation> reservations;
         }
         System.out.println("No reservation found for " + guestName);
     }
-    public void main(String[] args ) {
+    public static void main(String[] args ) {
         HotelReservationSystem system = new HotelReservationSystem();
         Scanner scanner = new Scanner(System.in);
         system.addRoom(new Room(101, "Single", 50.0));
