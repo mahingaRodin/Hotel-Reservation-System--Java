@@ -8,5 +8,7 @@
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="javafx-swt" level="project" />
+    <orderEntry type="library" name="lib" level="project" />
+    <orderEntry type="library" name="javafx-sdk-23.0" level="project" />
   </component>
 </module>
