@@ -2,15 +2,18 @@ import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.layout.*;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 
 public class HotelReservationSystem extends Application {
-    private List<Room> rooms = new ArrayList<>();
-    private List<Reservation> reservations = new ArrayList<>();
+    private final List<Room> rooms = new ArrayList<>();
+    private final List<Reservation> reservations = new ArrayList<>();
 
     public static void main(String[] args) {
         launch(args);
@@ -18,31 +21,21 @@ public class HotelReservationSystem extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        // Sample rooms
-        rooms.add(new Room(101, "Single", 50.0));
-        rooms.add(new Room(102, "Double", 75.0));
-        rooms.add(new Room(103, "Suite", 120.0));
-
-        // Main layout
         VBox mainLayout = new VBox(10);
         mainLayout.setPadding(new Insets(20));
 
-        // Buttons
         Button searchButton = new Button("Search Rooms");
         Button reserveButton = new Button("Make a Reservation");
         Button viewReservationsButton = new Button("View Reservations");
         Button cancelReservationButton = new Button("Cancel a Reservation");
 
-        // Add buttons to layout
         mainLayout.getChildren().addAll(searchButton, reserveButton, viewReservationsButton, cancelReservationButton);
 
-        // Set event handlers
-        searchButton.setOnAction(e -> searchRooms(primaryStage));
-        reserveButton.setOnAction(e -> makeReservation(primaryStage));
-        viewReservationsButton.setOnAction(e -> viewReservations(primaryStage));
+        searchButton.setOnAction(e -> searchRooms());
+        reserveButton.setOnAction(e -> makeReservation());
+        viewReservationsButton.setOnAction(e -> viewReservations());
         cancelReservationButton.setOnAction(e -> cancelReservation(primaryStage));
 
-        // Set the scene
         Scene scene = new Scene(mainLayout, 400, 300);
         primaryStage.setTitle("Hotel Reservation System");
         primaryStage.setScene(scene);
@@ -50,7 +43,7 @@ public class HotelReservationSystem extends Application {
     }
 
     // Search Rooms
-    private void searchRooms(Stage primaryStage) {
+    private void searchRooms() {
         Stage searchStage = new Stage();
         VBox layout = new VBox(10);
         layout.setPadding(new Insets(20));
@@ -64,13 +57,27 @@ public class HotelReservationSystem extends Application {
         searchButton.setOnAction(e -> {
             String roomType = roomTypeField.getText();
             resultArea.clear();
-            for (Room room : rooms) {
-                if (room.isAvailable() && room.getRoomType().equalsIgnoreCase(roomType)) {
+
+            try (Connection conn = DatabaseConnection.getConnection()) {
+                String query = "SELECT * FROM rooms WHERE room_type = ? AND is_available = TRUE";
+                PreparedStatement stmt = conn.prepareStatement(query);
+                stmt.setString(1, roomType);
+
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    int roomNumber = rs.getInt("room_number");
+                    String type = rs.getString("room_type");
+                    double price = rs.getDouble("price_per_night");
+                    boolean isAvailable = rs.getBoolean("is_available");
+                    Room room = new Room(roomNumber, type, price, isAvailable);
                     resultArea.appendText(room + "\n");
                 }
-            }
-            if (resultArea.getText().isEmpty()) {
-                resultArea.setText("No available rooms of this type.");
+
+                if (resultArea.getText().isEmpty()) {
+                    resultArea.setText("No available rooms of this type.");
+                }
+            } catch (Exception ex) {
+                resultArea.setText("Error: " + ex.getMessage());
             }
         });
 
@@ -81,8 +88,8 @@ public class HotelReservationSystem extends Application {
         searchStage.show();
     }
 
-    // Make a Reservation
-    private void makeReservation(Stage primaryStage) {
+    // Make Reservation
+    private void makeReservation() {
         Stage reservationStage = new Stage();
         VBox layout = new VBox(10);
         layout.setPadding(new Insets(20));
@@ -104,16 +111,36 @@ public class HotelReservationSystem extends Application {
             int roomNumber = Integer.parseInt(roomField.getText());
             int nights = Integer.parseInt(nightsField.getText());
 
-            for (Room room : rooms) {
-                if (room.getRoomNumber() == roomNumber && room.isAvailable()) {
-                    double totalCost = nights * room.getPricePerNight();
-                    reservations.add(new Reservation(guestName, roomNumber, nights, totalCost));
-                    room.setAvailability(false);
+            try (Connection conn = DatabaseConnection.getConnection()) {
+                String checkRoomQuery = "SELECT is_available, price_per_night FROM rooms WHERE room_number = ?";
+                PreparedStatement checkStmt = conn.prepareStatement(checkRoomQuery);
+                checkStmt.setInt(1, roomNumber);
+                ResultSet rs = checkStmt.executeQuery();
+
+                if (rs.next() && rs.getBoolean("is_available")) {
+                    double pricePerNight = rs.getDouble("price_per_night");
+                    double totalCost = nights * pricePerNight;
+
+                    String reserveQuery = "INSERT INTO reservations (guest_name, room_number, number_of_nights, total_cost) VALUES (?, ?, ?, ?)";
+                    PreparedStatement reserveStmt = conn.prepareStatement(reserveQuery);
+                    reserveStmt.setString(1, guestName);
+                    reserveStmt.setInt(2, roomNumber);
+                    reserveStmt.setInt(3, nights);
+                    reserveStmt.setDouble(4, totalCost);
+                    reserveStmt.executeUpdate();
+
+                    String updateRoomQuery = "UPDATE rooms SET is_available = FALSE WHERE room_number = ?";
+                    PreparedStatement updateStmt = conn.prepareStatement(updateRoomQuery);
+                    updateStmt.setInt(1, roomNumber);
+                    updateStmt.executeUpdate();
+
                     resultLabel.setText("Reservation successful for " + guestName + "!");
-                    return;
+                } else {
+                    resultLabel.setText("Room not available.");
                 }
+            } catch (Exception ex) {
+                resultLabel.setText("Error: " + ex.getMessage());
             }
-            resultLabel.setText("Room not available or does not exist.");
         });
 
         layout.getChildren().addAll(guestLabel, guestField, roomLabel, roomField, nightsLabel, nightsField, reserveButton, resultLabel);
@@ -124,7 +151,7 @@ public class HotelReservationSystem extends Application {
     }
 
     // View Reservations
-    private void viewReservations(Stage primaryStage) {
+    private void viewReservations() {
         Stage viewStage = new Stage();
         VBox layout = new VBox(10);
         layout.setPadding(new Insets(20));
@@ -132,12 +159,26 @@ public class HotelReservationSystem extends Application {
         TextArea reservationArea = new TextArea();
         reservationArea.setEditable(false);
 
-        for (Reservation reservation : reservations) {
-            reservationArea.appendText(reservation + "\n-------------------\n");
-        }
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String query = "SELECT * FROM reservations";
+            PreparedStatement stmt = conn.prepareStatement(query);
+            ResultSet rs = stmt.executeQuery();
 
-        if (reservations.isEmpty()) {
-            reservationArea.setText("No reservations made yet.");
+            while (rs.next()) {
+                String guestName = rs.getString("guest_name");
+                int roomNumber = rs.getInt("room_number");
+                int numberOfNights = rs.getInt("number_of_nights");
+                double totalCost = rs.getDouble("total_cost");
+
+                Reservation reservation = new Reservation(guestName, roomNumber, numberOfNights, totalCost);
+                reservationArea.appendText(reservation + "\n-------------------\n");
+            }
+
+            if (reservationArea.getText().isEmpty()) {
+                reservationArea.setText("No reservations made yet.");
+            }
+        } catch (Exception ex) {
+            reservationArea.setText("Error: " + ex.getMessage());
         }
 
         layout.getChildren().add(reservationArea);
@@ -147,39 +188,77 @@ public class HotelReservationSystem extends Application {
         viewStage.show();
     }
 
-    // Cancel a Reservation
-    private void cancelReservation(Stage primaryStage) {
-        Stage cancelStage = new Stage();
-        VBox layout = new VBox(10);
-        layout.setPadding(new Insets(20));
+//    Cancel reservations
+// Cancel a Reservation by ID
+private void cancelReservation(Stage primaryStage) {
+    Stage cancelStage = new Stage();
+    VBox layout = new VBox(10);
+    layout.setPadding(new Insets(20));
 
-        Label guestLabel = new Label("Enter guest name to cancel reservation:");
-        TextField guestField = new TextField();
-        Button cancelButton = new Button("Cancel Reservation");
-        Label resultLabel = new Label();
+    Label idLabel = new Label("Enter reservation ID to cancel:");
+    TextField idField = new TextField();
+    Button cancelButton = new Button("Cancel Reservation");
+    Label resultLabel = new Label();
 
-        cancelButton.setOnAction(e -> {
-            String guestName = guestField.getText();
-            for (int i = 0; i < reservations.size(); i++) {
-                if (reservations.get(i).getGuestName().equalsIgnoreCase(guestName)) {
-                    int roomNumber = reservations.get(i).getRoomNumber();
-                    for (Room room : rooms) {
-                        if (room.getRoomNumber() == roomNumber) {
-                            room.setAvailability(true);
-                            reservations.remove(i);
-                            resultLabel.setText("Reservation canceled for " + guestName);
-                            return;
-                        }
-                    }
-                }
+    cancelButton.setOnAction(e -> {
+        try {
+            // Parse reservation ID
+            int reservationId = Integer.parseInt(idField.getText());
+
+            // Attempt to cancel reservation in the database
+            boolean isCanceled = cancelReservationInDB(reservationId);
+
+            // Update result label based on success or failure
+            if (isCanceled) {
+                resultLabel.setText("Reservation with ID " + reservationId + " has been canceled successfully.");
+            } else {
+                resultLabel.setText("Reservation with ID " + reservationId + " not found.");
             }
-            resultLabel.setText("No reservation found for " + guestName);
-        });
+        } catch (NumberFormatException ex) {
+            resultLabel.setText("Invalid ID format. Please enter a valid numeric ID.");
+        } catch (Exception ex) {
+            resultLabel.setText("Error occurred: " + ex.getMessage());
+        }
+    });
 
-        layout.getChildren().addAll(guestLabel, guestField, cancelButton, resultLabel);
-        Scene scene = new Scene(layout, 400, 200);
-        cancelStage.setTitle("Cancel Reservation");
-        cancelStage.setScene(scene);
-        cancelStage.show();
+    layout.getChildren().addAll(idLabel, idField, cancelButton, resultLabel);
+    Scene scene = new Scene(layout, 400, 200);
+    cancelStage.setTitle("Cancel Reservation");
+    cancelStage.setScene(scene);
+    cancelStage.show();
+}
+    // Cancel reservation in the database using the reservation ID
+    private boolean cancelReservationInDB(int reservationId) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            // Check if the reservation exists
+            String selectQuery = "SELECT room_number FROM reservations WHERE reservation_id = ?";
+            PreparedStatement selectStmt = conn.prepareStatement(selectQuery);
+            selectStmt.setInt(1, reservationId);
+            ResultSet resultSet = selectStmt.executeQuery();
+
+            if (resultSet.next()) {
+                // Fetch room number for the reservation
+                int roomNumber = resultSet.getInt("room_number");
+
+                // Delete the reservation
+                String deleteQuery = "DELETE FROM reservations WHERE reservation_id = ?";
+                PreparedStatement deleteStmt = conn.prepareStatement(deleteQuery);
+                deleteStmt.setInt(1, reservationId);
+                deleteStmt.executeUpdate();
+
+                // Mark the room as available
+                String updateRoomQuery = "UPDATE rooms SET is_available = true WHERE room_number = ?";
+                PreparedStatement updateRoomStmt = conn.prepareStatement(updateRoomQuery);
+                updateRoomStmt.setInt(1, roomNumber);
+                updateRoomStmt.executeUpdate();
+
+                return true; // Successfully canceled the reservation
+            }
+        } catch (Exception ex) {
+            System.out.println("Error while canceling reservation: " + ex.getMessage());
+        }
+        return false; // Failed to cancel
     }
+
+
 }

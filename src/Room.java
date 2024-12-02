@@ -1,23 +1,24 @@
 public class Room {
-    private final int roomNumber;
-    private final String roomType;
-    private final double pricePerNight;
+    private int roomNumber;
+    private String roomType;
+    private double pricePerNight;
     private boolean isAvailable;
 
-
-    public Room (int roomNumber, String roomType, double pricePerNight) {
+    public Room(int roomNumber, String roomType, double pricePerNight, boolean isAvailable) {
         this.roomNumber = roomNumber;
         this.roomType = roomType;
         this.pricePerNight = pricePerNight;
-        this.isAvailable = true;
+        this.isAvailable = isAvailable;
     }
 
     public int getRoomNumber() {
         return roomNumber;
     }
+
     public String getRoomType() {
         return roomType;
     }
+
     public double getPricePerNight() {
         return pricePerNight;
     }
@@ -32,8 +33,6 @@ public class Room {
 
     @Override
     public String toString() {
-        return "Room " + roomNumber + " (" + roomType + ") - $" + pricePerNight + " per night - " +
-                (isAvailable ? "Available" : "Not Available");
+        return "Room " + roomNumber + " (" + roomType + ") - $" + pricePerNight + " per night, Available: " + isAvailable;
     }
-
 }
